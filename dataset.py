@@ -9,6 +9,30 @@ from collections import defaultdict
 import torch.utils.data as data_utils
 
 
+
+def download_file_from_storage(local_filename):
+    """
+    Download file from google cloud storage if it doesnot exist in the locally.
+    """
+    import os
+    from google.cloud import storage
+    bucket = storage.Client().get_bucket(GCS_BUCKET)
+
+    if os.path.exists(local_filename):
+        return local_filename
+
+    relative_path = os.path.relpath(local_filename, RAW_DATASET_ROOT_FOLDER)
+    storage_filename = os.path.join(BUCKET_ROOT, relative_path)
+
+    blob = bucket.blob(storage_filename)
+    if blob.exists():
+        os.makedirs(os.path.dirname(local_filename), exist_ok=True)
+        blob.download_to_filename(local_filename)
+
+    print(f"Downloaded {local_filename}!")
+    return local_filename
+
+
 class AbstractDataset(metaclass=ABCMeta):
     def __init__(self, args, stats=None):
         self.house_indicies = args.house_indicies
@@ -256,17 +280,27 @@ class REDD_LF_Dataset(AbstractDataset):
 class UK_DALE_Dataset(AbstractDataset):
     @classmethod
     def code(cls):
-        return 'uk_dale'
+        # changed from uk_dale to ukdale to match my specific naming
+        return 'ukdale'
 
     @classmethod
     def _if_data_exists(self):
-        folder = Path(RAW_DATASET_ROOT_FOLDER).joinpath(self.code())
-        first_file = folder.joinpath('house_1', 'channel_1.dat')
-        if first_file.is_file():
-            return True
-        return False
+        # checking the folder exists is skipped since the files are downloaded only
+        # when it is about to be read, also the folder's existence in the bucket is checked 
+        # before starting the training job
+        return True
+        # folder = Path(RAW_DATASET_ROOT_FOLDER).joinpath(self.code())
+        # first_file = folder.joinpath('house_1', 'channel_1.dat')
+        # if first_file.is_file():
+        #     return True
+        # return False
 
     def load_data(self):
+
+        def pd_read_csv(filename, *args, **kwargs):
+            filename = download_file_from_storage(filename)
+            return pd.read_csv(filepath_or_buffer=filename, *args, **kwargs)
+        
         for appliance in self.appliance_names:
             assert appliance in ['dishwasher', 'fridge',
                                  'microwave', 'washing_machine', 'kettle']
@@ -287,10 +321,10 @@ class UK_DALE_Dataset(AbstractDataset):
 
             for house_id in self.house_indicies:
                 house_folder = directory.joinpath('house_' + str(house_id))
-                house_label = pd.read_csv(house_folder.joinpath(
+                house_label = pd_read_csv(house_folder.joinpath(
                     'labels.dat'), sep=' ', header=None)
 
-                house_data = pd.read_csv(house_folder.joinpath(
+                house_data = pd_read_csv(house_folder.joinpath(
                     'channel_1.dat'), sep=' ', header=None)
                 house_data.iloc[:, 0] = pd.to_datetime(
                     house_data.iloc[:, 0], unit='s')
@@ -320,7 +354,7 @@ class UK_DALE_Dataset(AbstractDataset):
                     if app_index_dict[appliance][0] == -1:
                         house_data.insert(len(house_data.columns), appliance, np.zeros(len(house_data)))
                     else:
-                        temp_data = pd.read_csv(house_folder.joinpath(
+                        temp_data = pd_read_csv(house_folder.joinpath(
                             'channel_' + str(app_index_dict[appliance][0]) + '.dat'), sep=' ', header=None)
                         temp_data.iloc[:, 0] = pd.to_datetime(
                             temp_data.iloc[:, 0], unit='s')
