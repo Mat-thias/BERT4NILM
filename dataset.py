@@ -204,7 +204,6 @@ class REDD_LF_Dataset(AbstractDataset):
                         app_index_dict[appliance].append(-1)
 
                 if np.sum(list(app_index_dict.values())) == -len(self.appliance_names):
-                    self.house_indicies.remove(house_id)
                     continue
 
                 for appliance in self.appliance_names:
@@ -313,7 +312,6 @@ class UK_DALE_Dataset(AbstractDataset):
                         app_index_dict[appliance].append(-1)
 
                 if np.sum(list(app_index_dict.values())) == -len(self.appliance_names):
-                    self.house_indicies.remove(house_id)
                     continue
 
                 for appliance in self.appliance_names:
