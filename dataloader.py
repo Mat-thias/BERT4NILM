@@ -87,28 +87,28 @@ class BERTDataset(data_utils.Dataset):
         y = self.padding_seqs(self.y[start_index: end_index])
         status = self.padding_seqs(self.status[start_index: end_index])
 
-        tokens = []
-        labels = []
-        on_offs = []
-        for i in range(len(x)):
-            prob = random.random()
-            if prob < self.mask_prob:
-                prob = random.random()
-                if prob < 0.8:
-                    tokens.append(-1)
-                elif prob < 0.9:
-                    tokens.append(np.random.normal())
-                else:
-                    tokens.append(x[i])
-
-                labels.append(y[i])
-                on_offs.append(status[i])
-            else:
-                tokens.append(x[i])
-                temp = np.array([-1] * self.columns)
-                labels.append(temp)
-                on_offs.append(temp)
+        # masking self.mask_prob * 100% of the data in a vertorized form
+        tokens = x.copy()
+        labels = -np.ones_like(y)
+        on_offs = -np.ones_like(status)
         
+        mask_probabilities = np.random.rand(*tokens.shape)
+        mask_idx = np.nonzero(mask_probabilities < self.mask_prob)[0]
+        
+        mask_idx_probabilities = np.random.rand(*mask_idx.shape)
+        mask_idx_set_to_minus_1 = mask_idx[mask_idx_probabilities < 0.8]
+        mask_idx_set_to_guass_noise = mask_idx[(0.8 <= mask_idx_probabilities)  & (mask_idx_probabilities < 0.9)]
+
+        # setting 80% to -1
+        tokens[mask_idx_set_to_minus_1] = -np.ones_like(tokens[mask_idx_set_to_minus_1])
+        # setting 90% to guass noise
+        tokens[mask_idx_set_to_guass_noise] = np.random.normal(size=tokens[mask_idx_set_to_guass_noise].shape)
+        # the remaining 10% is left unchanged
+
+        # setting the masked parts to the actual values for the appliance
+        labels[mask_idx] = y[mask_idx]
+        on_offs[mask_idx] = status[mask_idx]
+
         return torch.tensor(tokens), torch.tensor(labels), torch.tensor(on_offs)
 
     def padding_seqs(self, in_array):
