@@ -53,7 +53,7 @@ class Trainer(metaclass=ABCMeta):
 
         self.C0 = torch.tensor(args.c0[args.appliance_names[0]]).to(self.device)
         print('C0: {}'.format(self.C0))
-        self.kl = nn.KLDivLoss(reduction='batchmean')
+        self.kl = nn.KLDivLoss(reduction='none', log_target=True)
         self.mse = nn.MSELoss()
         self.margin = nn.SoftMarginLoss()
         self.l1_on = nn.L1Loss(reduction='sum')
@@ -141,7 +141,14 @@ class Trainer(metaclass=ABCMeta):
             status_masked = torch.masked_select(status, mask).view((-1, batch_shape[-1]))
             logits_status_masked = torch.masked_select(logits_status, mask).view((-1, batch_shape[-1]))
 
-            kl_loss = self.kl(torch.log(F.softmax(logits_masked.squeeze() / 0.1, dim=-1) + 1e-9), F.softmax(labels_masked.squeeze() / 0.1, dim=-1))
+            logits_masked_kdl = torch.masked_fill(logits, ~mask, float("-inf"))
+            labels_masked_kdl = torch.masked_fill(logits, ~mask, float("-inf"))
+            kl_loss_matrix = self.kl(
+                torch.log_softmax(logits_masked_kdl.squeeze(2) / 0.1, dim=-1),
+                torch.log_softmax(labels_masked_kdl.squeeze(2) / 0.1, dim=-1)
+            )
+            kl_loss = torch.masked_fill(kl_loss_matrix, ~mask, 0).sum(dim=1).mean()
+            
             mse_loss = self.mse(logits_masked.contiguous().view(-1).double(),
                 labels_masked.contiguous().view(-1).double())
             margin_loss = self.margin((logits_status_masked * 2 - 1).contiguous().view(-1).double(), 
